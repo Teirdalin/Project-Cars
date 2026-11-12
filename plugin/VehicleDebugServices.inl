@@ -2,6 +2,7 @@
 std::string debugFitVehicle(Building* b,Character* actor,int preset) {
     Lock lock;
     if(!enabled || !frame(b) || !b->isValid() || !actor || !actor->isValid() || !actor->isPlayerCharacter() || !actor->getInventory() || b->getFaction()!=actor->getFaction() || preset<0 || preset>=DebugPresetCount)return "Preset unavailable.";
+    if(b->getGameData()->stringID!=debugPresetBuildingId(preset))return "Preset does not match this frame.";
     Building::ConstructionState* build=b->getBuildState_ActualNonShared();
     if(!build || !build->isComplete || build->isDismantled)return "Frame has not finished building.";
     Inventory* inv=ensure(b);if(!inv || !inv->isEmpty())return "Preset requires the newly spawned empty frame.";

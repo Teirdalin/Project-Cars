@@ -60,6 +60,8 @@ class GunClassPersonal; // Missing forward declaration in the installed SDK.
 #include "NativeRuntime.h"
 #include "VehicleWorkshop.h"
 #include "../src/WorkshopData.generated.h"
+#include "../src/XSmallVisuals.generated.h"
+#include "../src/MotorcycleVisuals.generated.h"
 #include "../src/VehicleSkills.h"
 #include "../src/VehiclePicking.generated.h"
 #include "../src/FittingQueue.h"
@@ -194,7 +196,29 @@ void (*originalDestroy)(Building*)=0;
 void (*originalDestroyPhysical)(Building*)=0;
 bool (*originalCanDismantle)(const Building*)=0;
 void (*originalConfirmDismantle)(Building*,int)=0;
-bool frame(const Building* b) {return b && b->getGameData() && b->getGameData()->stringID=="10-Project Cars.mod";}
+bool motorcycleFrame(const Building* b) {
+    return b && b->getGameData() && b->getGameData()->stringID=="210-Project Cars.mod";
+}
+bool xsmallFrame(const Building* b) {
+    if(motorcycleFrame(b))return true;
+    return b && b->getGameData() && b->getGameData()->stringID=="200-Project Cars.mod";
+}
+bool frame(const Building* b) {
+    return xsmallFrame(b) || (b && b->getGameData() && b->getGameData()->stringID=="10-Project Cars.mod");
+}
+const cars::WorkshopVisual* frameVisuals(const Building* b,size_t& count) {
+    if(motorcycleFrame(b)){count=cars::motorcycleVisualCount;return cars::motorcycleVisuals;}
+    if(xsmallFrame(b)){count=cars::xsmallVisualCount;return cars::xsmallVisuals;}
+    count=cars::workshopVisualCount;
+    return cars::workshopVisuals;
+}
+const cars::PickPlane (*compactPickPlanes(const Building* b))[6] {
+    return motorcycleFrame(b)?cars::motorcyclePickPlanes:cars::xsmallPickPlanes;
+}
+const cars::RigPoint& driverAnchor(const Building* b,bool pelvis=false) {
+    if(xsmallFrame(b))return pelvis?cars::xsmallPelvis:cars::xsmallSeat;
+    return pelvis?cars::lightSeatPelvis.position:cars::lightSeat.position;
+}
 ZoneMap* (*originalBuildingZone)(Building*)=0;
 void (*originalBuildingStream)(Building*)=0;
 void vehicleLoadUnload(Building* b) {
@@ -259,7 +283,7 @@ bool tryOperate(UseableStuff* use,const hand& actor) {
 }
 Ogre::Vector3* positionMarker(Building* b,Ogre::Vector3* out,const Ogre::Vector3& from) {
     if(frame(b) && b->getRootNode()) {
-        *out=rigWorld(b,cars::lightSeat.position);return out;
+        *out=rigWorld(b,driverAnchor(b));return out;
     }
     return originalPositionMarker(b,out,from);
 }
@@ -301,9 +325,10 @@ const cars::WorkshopSlot* mount(const std::string& id) {
 Inventory* lookup(const Building* b) {
     std::map<hand,Inventory*>::iterator i=stores.find(b->getHandle());return i==stores.end()?0:i->second;
 }
-void ensureMountSections(Inventory* inv) {
+void ensureMountSections(Inventory* inv,const Building* b) {
     for(size_t i=0;i<cars::workshopMountCount;++i) {
         const cars::WorkshopSlot& s=cars::workshopMounts[i];
+        if(!cars::workshopMountSupported(xsmallFrame(b),s.id,motorcycleFrame(b)))continue;
         InventorySection* section=inv->getSection(s.id);
         if(!section)section=inv->initialiseNewSection(s.id,16,16,ATTACH_NONE,false,false,true,1);
         if(!section)throw std::runtime_error("Unable to create fitting slot");
@@ -321,7 +346,7 @@ Inventory* ensure(Building* b) {
     if(!enabled || !frame(b) || stores.size()>=1024)return 0;
     inv=new Inventory(b);
     try {
-        ensureMountSections(inv);
+        ensureMountSections(inv,b);
         stores.insert(std::make_pair(b->getHandle(),inv));
     } catch (...) {delete inv;throw;}
     return inv;
@@ -386,13 +411,13 @@ void load(Building* b,GameData* state,const std::string& door) {
     inv->loadFrom(state->sourceContainer,saved);
     // Old saves predate new optional mounts. Fill only missing sections, keeping
     // existing installed items and their section identities intact.
-    ensureMountSections(inv);
+    ensureMountSections(inv,b);
     loadDrive(b,state);loadPassengers(b,state);loadVehicleTurret(b,state);
     if(state->sdata.count(queueKey)) {
         cars::FittingQueue restored;
         if(restored.load(state->sdata[queueKey])) {
             bool valid=true;
-            for(size_t n=0;n<restored.steps.size();++n) {const cars::FitStep& s=restored.steps[n];const cars::WorkshopSlot* slot=mount(s.slot);if(!slot || !cars::workshopAccepts(*slot,s.item))valid=false;}
+            for(size_t n=0;n<restored.steps.size();++n) {const cars::FitStep& s=restored.steps[n];const cars::WorkshopSlot* slot=mount(s.slot);if(!slot || !cars::workshopMountSupported(xsmallFrame(b),s.slot,motorcycleFrame(b)) || !cars::workshopAccepts(*slot,s.item))valid=false;}
             if(valid){workPlans[b->getHandle()].queue=restored;messages[b->getHandle()]="Saved queue paused. Select a worker and Resume.";}
             else ErrorLog("Project Cars: invalid saved queue ignored");
         }else ErrorLog("Project Cars: malformed saved queue ignored");
@@ -442,18 +467,19 @@ bool interactionActor(Building* b,Character* actor,bool allowCombat=false) {
 }
 bool eligible(Building* b,Character* actor) {return interactionActor(b,actor) && b->getPosition().squaredDistance(actor->getPosition())<=900;}
 bool boardingEntry(Building* b,Character* actor,Ogre::Vector3& entry) {
+    const cars::RigMarker* doors=xsmallFrame(b)?cars::xsmallDoors:cars::lightDoors;
     if(!b || !b->getRootNode() || !actor)return false;
     // Enable native collision/zone terrain fallback. A renderer miss is -99,
     // not NaN; mixing that sentinel with a successful sample rejected dry land.
     const float vehicleGround=UtilityT::getTerrainHeightFromRenderer(b->getPosition(),true,0);
     double best=1e20;bool found=false;
     for(int side=0;side<2;++side) {
-        Ogre::Vector3 p=rigWorld(b,cars::lightDoors[side].position);
+        Ogre::Vector3 p=rigWorld(b,doors[side].position);
         float height=UtilityT::getTerrainHeightFromRenderer(p,true,0);
         // Use the same terrain sample for height and water. getPositionInWater
         // makes a separate fast query and mistakes its own -99 miss for water.
         const bool allowed=cars::boardingGroundAllowed(height,vehicleGround);
-        std::ostringstream detail;detail<<"Project Cars: boarding marker="<<cars::lightDoors[side].name<<" point="<<p.x<<','<<p.y<<','<<p.z
+        std::ostringstream detail;detail<<"Project Cars: boarding marker="<<doors[side].name<<" point="<<p.x<<','<<p.y<<','<<p.z
             <<" terrain="<<height<<" frameTerrain="<<vehicleGround<<" actorY="<<actor->getPosition().y<<" accepted="<<allowed;
         DebugLog(detail.str());
         if(!allowed)continue;
@@ -521,6 +547,10 @@ void hideBatchedFrame(Building* b) {
 #include "TrackVisuals.inl"
 #include "DrivingRuntime.inl"
 #include "VehicleDents.inl"
+cars::RigPoint driverGrip(Building* b,bool left,double angle) {
+    if(!motorcycleFrame(b))return cars::steeringGrip(left,angle*2.5,xsmallFrame(b));
+    return cars::RigPoint(6.4,6.92,0)+cars::rotateRigPoint(cars::RigPoint(-.45,1.15,left?-3:3),cars::RigPoint(0,1,0),angle);
+}
 #include "DriverPose.inl"
 #include "VehicleLights.inl"
 void clearSeatClaim(Building* b) {
@@ -541,7 +571,7 @@ bool restoreDriverSeat(Building* b,DriveState& drive,const hand& who,double now)
     Character* actor=who.getCharacter();UseableStuff* seat=b->getUseableStuff();
     if(!actor || !interactionActor(b,actor,true) || !seat || !fitted(b,"seat_driver") || !actor->getMovement() || !actor->getOrdersReciever())return false;
     // Never reclaim a character that actually walked away or is in another car.
-    if(actor->getPosition().squaredDistance(rigWorld(b,cars::lightSeat.position))>6400)return false;
+    if(actor->getPosition().squaredDistance(rigWorld(b,driverAnchor(b)))>6400)return false;
     for(std::map<hand,DriveState>::const_iterator d=drives.begin();d!=drives.end();++d)
         if(!cars::sameHandle(d->first,b->getHandle()) && cars::sameHandle(d->second.occupant,who))return false;
     if(!seat->getOccupant().isNull() && !cars::sameHandle(seat->getOccupant(),who))return false;
@@ -553,7 +583,7 @@ bool restoreDriverSeat(Building* b,DriveState& drive,const hand& who,double now)
     try {
         actor->getOrdersReciever()->addOrder(HOLD_POSITION,hand(),actor->getPosition(),true,false);
         actor->getMovement()->halt();
-        actor->getMovement()->_setPositionDirectionAndTeleport(rigWorld(b,cars::lightSeat.position),b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y));
+        actor->getMovement()->_setPositionDirectionAndTeleport(rigWorld(b,driverAnchor(b)),b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y));
     }catch(...){issuingSeatOrder=false;clearSeatClaim(b);throw;}
     issuingSeatOrder=false;
     if(actor->getAnimationClass())actor->getAnimationClass()->playAction("sitting chair",1,1,false);
@@ -595,6 +625,24 @@ bool pickOneVehicle(Building* b,const Ogre::Ray& ray,double& nearest,hand& targe
     Ogre::SceneNode* root=b->getRootNode();Ogre::Vector3 o=root->convertWorldToLocalPosition(ray.getOrigin());
     Ogre::Vector3 d=root->convertWorldToLocalPosition(ray.getOrigin()+ray.getDirection())-o;
     PickVector origin(o.x,o.y,o.z),direction(d.x,d.y,d.z);
+    if(xsmallFrame(b)) {
+        bool hit=false;
+        size_t count=0;
+        const cars::WorkshopVisual* visuals=frameVisuals(b,count);
+        const cars::PickPlane (*planes)[6]=compactPickPlanes(b);
+        const char* quadSlots[]={"","engine","tank","seat_driver","steering","wheel_fl","wheel_fr","wheel_rl","wheel_rr"};
+        const char* bikeSlots[]={"","engine","tank","seat_driver","steering","wheel_fl","wheel_rl"};
+        const char** slots=motorcycleFrame(b)?bikeSlots:quadSlots;
+        for(size_t n=0;n<count;++n) {
+            const std::string component=visuals[n].component;
+            if(n && !fitted(b,slots[n]))continue;
+            if(!hitVehicleHull(origin,direction,planes[n],6,nearest))continue;
+            target=b->getHandle();
+            action=component=="Seat_Driver"?SitDriver:component=="Steering_Wheel"?DriveVehicle:ConfigureVehicle;
+            hit=true;
+        }
+        return hit;
+    }
     const PickPlane broad[]={{-1,0,0,-35},{1,0,0,-35},{0,-1,0,2},{0,1,0,-45},{0,0,-1,-25},{0,0,1,-25}};
     double broadDistance=nearest;if(!hitVehicleHull(origin,direction,broad,6,broadDistance))return false;
     const std::map<std::string,std::string> items=contents(lookup(b));std::set<std::string> active;active.insert("Frame");
@@ -659,6 +707,7 @@ ManualVehicleView manualVehicleView() {
     UseableStuff* seat=b->getUseableStuff();if(!seat || !sameHandle(seat->getOccupant(),i->second.occupant))return view;
     Ogre::SceneNode* root=b->getRootNode();const Ogre::Quaternion q=root->_getDerivedOrientation();
     view.anchor=point(root->_getDerivedPosition());view.rotation=BodyRotation(q.w,q.x,q.y,q.z);view.scale=b->getScale();
+    view.extraSmall=xsmallFrame(b);
     view.ready=validPoint(view.anchor) && _finite(q.w+q.x+q.y+q.z+view.scale) && view.scale>0;return view;
 }
 RigPoint vehicleCameraClearance(const VehicleCameraPose& pose) {
@@ -752,7 +801,7 @@ bool interactWithVehicle(Building* b,Character* actor,VehicleClick action) {
     return false;
 }
 void fittingSnapshot(Building* b,Character* actor,WorkshopSnapshot& out) {
-    Lock lock;out.fittingAllowed=eligible(b,actor);out.installed=contents(ensure(b));
+    Lock lock;out.extraSmall=xsmallFrame(b);out.motorcycle=motorcycleFrame(b);out.fittingAllowed=eligible(b,actor);out.installed=contents(ensure(b));
     for(size_t n=0;n<workshopMountCount;++n){Item* part=fittedItem(b,workshopMounts[n].id);if(part)out.condition[workshopMounts[n].id]=bounded(part->chargesLeft,0,1);}
     if(drives.count(b->getHandle()) && (drives[b->getHandle()].body.ignition||drives[b->getHandle()].body.speed()>1))out.fittingAllowed=false;
     if(out.installed.count("tank"))out.tankCapacity=40;
@@ -782,7 +831,7 @@ std::string commitFit(Building* b,Character* actor,const WorkshopRequest& req) {
     VehicleFaultScope trace("fitting inventory transfer");
     Lock lock;
     if(!eligible(b,actor) || req.target!=b->getHandle().toString() || req.actor!=actor->getHandle().toString())return "The character or vehicle changed. Try again.";
-    const WorkshopSlot* slot=mount(req.slot);if(!slot)return "Unknown mount.";
+    const WorkshopSlot* slot=mount(req.slot);if(!slot || !workshopMountSupported(xsmallFrame(b),req.slot,motorcycleFrame(b)))return "Mount unavailable on this frame.";
     Inventory* inv=ensure(b);Inventory* carried=actor->getInventory();if(!inv || !carried)return "Inventory unavailable.";
     InventorySection* section=inv->getSection(req.slot);if(!section)return "Mount unavailable.";
     if(req.remove) {
@@ -828,7 +877,7 @@ std::string startFit(Building* b,Character* actor,const WorkshopRequest& req) {
     if(req.remove && req.slot=="cargo" && b->getInventory() && !b->getInventory()->isEmpty())return "Empty the trunk before removing the cargo crate.";
     for(std::map<hand,Job>::const_iterator i=jobs.begin();i!=jobs.end();++i)if(sameHandle(i->second.actor,actor->getHandle()))return "This character is already working on a vehicle.";
     if(jobs.size()>=64)return "Too many active vehicle jobs.";
-    const WorkshopSlot* slot=mount(req.slot);if(!slot)return "Unknown mount.";
+    const WorkshopSlot* slot=mount(req.slot);if(!slot || !workshopMountSupported(xsmallFrame(b),req.slot,motorcycleFrame(b)))return "Mount unavailable on this frame.";
     Inventory* inv=ensure(b);if(!inv)return "Mount inventory unavailable.";
     InventorySection* section=inv->getSection(req.slot);
     if(!section || (req.remove?section->isEmpty():!section->isEmpty()))return req.remove?"This mount is empty.":"Remove the fitted part first.";
@@ -894,7 +943,7 @@ std::string editQueue(Building* b,Character* actor,const WorkshopRequest& req) {
         plan.queue.erase(req.item);return "Removed from queue.";
     }
     if(!eligible(b,actor))return "Bring a worker nearby and out of combat.";
-    const WorkshopSlot* slot=mount(req.slot);if(!slot)return "Unknown mount.";
+    const WorkshopSlot* slot=mount(req.slot);if(!slot || !workshopMountSupported(xsmallFrame(b),req.slot,motorcycleFrame(b)))return "Mount unavailable on this frame.";
     Inventory* inv=ensure(b);InventorySection* section=inv?inv->getSection(req.slot):0;
     if(!section)return "Mount unavailable.";
     if(plan.queue.contains(req.slot))return "This mount is already queued.";
@@ -1055,7 +1104,7 @@ void updateFittingWork() {
             double distance=actor->getPosition().distance(request.entry);
             if(distance<=3.0) {
                 orders->clearOrders();orders->clearCurrentGoal(true);movement->halt();
-                Ogre::Vector3 position=rigWorld(b,cars::lightSeat.position);
+                Ogre::Vector3 position=rigWorld(b,driverAnchor(b));
                 Ogre::Quaternion direction=b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y);
                 movement->_setPositionDirectionAndTeleport(position,direction);request.approaching=false;request.enterTime=0;
                 // Claim the native seat directly after reaching the door. The
@@ -1156,11 +1205,13 @@ void updateFittedVisuals(Building* b) {
     std::map<std::string,const WorkshopVisual*> wanted;
     // Completed frames travel as ordinary dynamic entities, just like fitted
     // modules. Native building instancing can retain the old batch bounds.
-    for(size_t i=0;i<workshopVisualCount;++i)if(std::string(workshopVisuals[i].component)=="Frame")wanted[std::string(nodePrefix)+"Frame"]=&workshopVisuals[i];
+    size_t visualCount=0;
+    const WorkshopVisual* visuals=frameVisuals(b,visualCount);
+    for(size_t i=0;i<visualCount;++i)if(std::string(visuals[i].component)=="Frame")wanted[std::string(nodePrefix)+"Frame"]=&visuals[i];
     for(size_t i=0;i<workshopMountCount;++i) {
         const WorkshopSlot& s=workshopMounts[i];std::map<std::string,std::string>::const_iterator f=fitted.find(s.id);if(f==fitted.end() || !::fitted(b,s.id))continue;
         std::string component=workshopComponent(s,f->second);
-        for(size_t j=0;j<workshopVisualCount;++j)if(component==workshopVisuals[j].component)wanted[std::string(nodePrefix)+component]=&workshopVisuals[j];
+        for(size_t j=0;j<visualCount;++j)if(component==visuals[j].component)wanted[std::string(nodePrefix)+component]=&visuals[j];
     }
     Ogre::SceneManager* scene=root->getCreator();
     for(size_t n=root->numChildren();n>0;--n) {
@@ -1172,7 +1223,7 @@ void updateFittedVisuals(Building* b) {
     }
     updateFrameDents(b);
     if(wanted.empty()){hideBatchedFrame(b);return;}
-    GameData* part=ou->gamedata.getData("13-Project Cars.mod",BUILDING_PART);
+    GameData* part=ou->gamedata.getData(motorcycleFrame(b)?"211-Project Cars.mod":xsmallFrame(b)?"201-Project Cars.mod":"13-Project Cars.mod",BUILDING_PART);
     GameData* material=part?b->selectPartMaterial(part):0;
     if(!material)throw std::runtime_error("Frame material definition unavailable for fitted meshes");
     // Buildings may render through InstancedEntity. Ask Kenshi for the ordinary

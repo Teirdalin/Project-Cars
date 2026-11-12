@@ -20,6 +20,13 @@ static const RigMarker lightSeat={"Seat_Driver",RigPoint(-8.467561,5.25,-.099404
 // Cushion top is y=8.45185 in the exported frame. Place the pelvis just above
 // it, independently of character height and the native chair clip's root offset.
 static const RigMarker lightSeatPelvis={"Seat_Driver_Pelvis",RigPoint(-8.467561,9.5,-.099404)};
+static const RigMarker xsmallDoors[2]={
+    {"Entrance_Driver_Left",RigPoint(-4,0,-12)},
+    {"Entrance_Driver_Right",RigPoint(-4,0,12)}
+};
+static const RigPoint xsmallSeat(-4,2.477844,0);
+static const RigPoint xsmallPelvis(-4,6.727844,0);
+static const RigPoint xsmallSteering(4.25,9.5,0);
 static const RigMarker lightWheel={"Steering_Pivot",RigPoint(-1.25086,11.1988,-.03299)};
 // Column points toward the driver: Blender (-.28,0,.45), converted to Y-up.
 inline RigPoint steeringAxis(){return RigPoint(-.28,.45,0).unit();}
@@ -27,8 +34,10 @@ inline RigPoint rotateRigPoint(const RigPoint& p,const RigPoint& axis,double ang
     RigPoint cross(axis.y*p.z-axis.z*p.y,axis.z*p.x-axis.x*p.z,axis.x*p.y-axis.y*p.x);
     return p*cos(angle)+cross*sin(angle)+axis*(axis.dot(p)*(1-cos(angle)));
 }
-inline RigPoint steeringGrip(bool left,double radians) {
-    return lightWheel.position+rotateRigPoint(RigPoint(0,0,left?-2.37:2.37),steeringAxis(),radians);
+inline RigPoint steeringGrip(bool left,double radians,bool extraSmall=false) {
+    const double radius=extraSmall?2.37*.82:2.37;
+    const RigPoint& pivot=extraSmall?xsmallSteering:lightWheel.position;
+    return pivot+rotateRigPoint(RigPoint(0,0,left?-radius:radius),steeringAxis(),radians);
 }
 // Lean from the lower spine while leaving the pelvis on the cushion. Choose
 // the least lean that reaches both grips, capped at a natural 35 degrees.

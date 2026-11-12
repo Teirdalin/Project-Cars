@@ -17,7 +17,8 @@ struct DriveState {
     bool reportedOwnerPin;bool streamNeeded;
     std::vector<cars::RigPoint> destinations;hand occupant,recovery,restoreOccupant;Ogre::Vector3 recoveryEntry;cars::DrivingInput input;
     double stamp,accumulator,recoveryTime,blockedTime,recoveryElapsed,audioImpact;DWORD physicsSeen;cars::DriveFault fault;DWORD retryAt,streamAt,faultAt;unsigned automaticRetries;double healthyPhysics;bool restartAfterRetry;bool retryPhysics,rebuildAttempted,streamPending;bool initialized,planning,navDetached,recoveryAnimated,recoveryCancelled,finalLeg,physicsReported,riderMaskReported,connecting,plannedFinal,exitRequested;
-    DriveState():nativeRequest(0),nativeSegment(1),nativeFailed(false),flooded(false),diagnosticTime(0),planningStarted(0),trackVisualStamp(-1),trackVisualFailed(false),streamRetryAt(0),streamAttempts(0),headlightsOn(false),explicitRebuild(false),reportedStreamPin(false),reportedOwnerPin(false),streamNeeded(false),stamp(-1),accumulator(0),recoveryTime(0),blockedTime(0),recoveryElapsed(0),audioImpact(0),physicsSeen(GetTickCount()),fault(cars::NoDriveFault),retryAt(0),streamAt(0),faultAt(0),automaticRetries(0),healthyPhysics(0),restartAfterRetry(false),retryPhysics(false),rebuildAttempted(false),streamPending(false),initialized(false),planning(false),navDetached(false),recoveryAnimated(false),recoveryCancelled(false),finalLeg(true),physicsReported(false),riderMaskReported(false),connecting(false),plannedFinal(true),exitRequested(false){}
+    DWORD diagnosticWallStart;
+    DriveState():nativeRequest(0),nativeSegment(1),nativeFailed(false),flooded(false),diagnosticTime(0),planningStarted(0),trackVisualStamp(-1),trackVisualFailed(false),streamRetryAt(0),streamAttempts(0),headlightsOn(false),explicitRebuild(false),reportedStreamPin(false),reportedOwnerPin(false),streamNeeded(false),stamp(-1),accumulator(0),recoveryTime(0),blockedTime(0),recoveryElapsed(0),audioImpact(0),physicsSeen(GetTickCount()),fault(cars::NoDriveFault),retryAt(0),streamAt(0),faultAt(0),automaticRetries(0),healthyPhysics(0),restartAfterRetry(false),retryPhysics(false),rebuildAttempted(false),streamPending(false),initialized(false),planning(false),navDetached(false),recoveryAnimated(false),recoveryCancelled(false),finalLeg(true),physicsReported(false),riderMaskReported(false),connecting(false),plannedFinal(true),exitRequested(false),diagnosticWallStart(0){driver.pace=.75;}
 };
 std::map<hand,DriveState> drives;
 bool passengerOrder(Character*);
@@ -98,7 +99,7 @@ cars::RigPoint point(const Ogre::Vector3& p){return cars::RigPoint(p.x,p.y,p.z);
 Ogre::Vector3 vector(const cars::RigPoint& p){return Ogre::Vector3(float(p.x),float(p.y),float(p.z));}
 Ogre::Quaternion quaternion(const cars::BodyRotation& r){return Ogre::Quaternion(float(r.w),float(r.x),float(r.y),float(r.z));}
 #include "NativeVehiclePath.inl"
-cars::RigPoint massCenter(Building* b){return cars::RigPoint(-1.0007885,10,-.0329885)*b->getScale();}
+cars::RigPoint massCenter(Building* b){return (motorcycleFrame(b)?cars::RigPoint(-.25,3.6,0):xsmallFrame(b)?cars::RigPoint(-.3,4,0):cars::RigPoint(-1.0007885,10,-.0329885))*b->getScale();}
 DriveState& driveState(Building* b) {
     DriveState& s=drives[b->getHandle()];if(!s.initialized) {
         s.body.orientation=cars::BodyRotation(b->rot.w,b->rot.x,b->rot.y,b->rot.z);
@@ -110,15 +111,17 @@ bool driveReady(Building* b) {
     for(unsigned n=0;n<4;++n)if(!fitted(b,required[n]))return false;
     unsigned wheels=(fitted(b,"wheel_fl")?1:0)|(fitted(b,"wheel_fr")?2:0)|(fitted(b,"wheel_rl")?4:0)|(fitted(b,"wheel_rr")?8:0);
     unsigned tracks=(fitted(b,"track_l")?1:0)|(fitted(b,"track_r")?2:0);
-    return cars::runningGearReady(wheels,tracks);
+    return motorcycleFrame(b)?wheels==5 && tracks==0:cars::runningGearReady(wheels,tracks);
 }
 cars::ChassisSpec driveSpec(Building* b) {
-    double mass=300+(lookup(b)?lookup(b)->getTotalWeight():0)+(b->getInventory()?b->getInventory()->getTotalWeight():0)+drives[b->getHandle()].body.fuel*.75;
+    double mass=(motorcycleFrame(b)?85:xsmallFrame(b)?125:300)+(lookup(b)?lookup(b)->getTotalWeight():0)+(b->getInventory()?b->getInventory()->getTotalWeight():0)+drives[b->getHandle()].body.fuel*.75;
     if(drives[b->getHandle()].occupant.isValid())mass+=75;
     mass+=75*passengerCount(b);
     cars::ChassisSpec spec=cars::lightChassisSpec(b->getScale(),mass);spec.wheelMask=0;
     const char* wheels[]={"wheel_fl","wheel_fr","wheel_rl","wheel_rr"};
     for(unsigned n=0;n<4;++n)if(fitted(b,wheels[n]))spec.wheelMask|=1u<<n;
+    if(motorcycleFrame(b))return cars::motorcycleChassisSpec(b->getScale(),mass,spec.wheelMask);
+    if(xsmallFrame(b))return cars::xsmallChassisSpec(b->getScale(),mass,spec.wheelMask);
     // With no tires the lower frame rests on the ground instead of receiving
     // suspension forces from absent wheels. Local frame origin is at its base.
     unsigned tracks=(fitted(b,"track_l")?1:0)|(fitted(b,"track_r")?2:0);
@@ -326,7 +329,7 @@ bool drivingMenu(Building* b,Character* actor,cars::VehicleClick action) {
         s.body.ignition=true;s.physicsSeen=GetTickCount();messages[b->getHandle()]="Engine running. Right-click terrain to drive.";return true;
     }
     if(action==cars::StopVehicle){if(cars::sameHandle(manualVehicle,b->getHandle()))endManual();brakeDrive(s);messages[b->getHandle()]="Braking.";return true;}
-    if(action==cars::PaceVehicle){s.driver.pace=s.driver.pace<.5?.65:s.driver.pace<.9?1:.35;messages[b->getHandle()]=s.driver.pace<.5?"Driving pace: cautious":s.driver.pace<.9?"Driving pace: cruise":"Driving pace: fast";return true;}
+    if(action==cars::PaceVehicle){s.driver.pace=s.driver.pace<.5?.75:s.driver.pace<.9?1:.35;messages[b->getHandle()]=s.driver.pace<.5?"Driving pace: cautious":s.driver.pace<.9?"Driving pace: cruise":"Driving pace: fast";return true;}
     return false;
 }
 void endManual(bool restoreCamera) {
@@ -516,9 +519,16 @@ void physicsUpdate(PhysicsActual* physics) {
             if(cars::completeVehicleDestination(s.driver,s.destinations,s.planning,s.finalLeg)){s.journey.reset();if(s.destinations.empty())messages[i->first]="Arrived.";DebugLog("Project Cars: vehicle destination completed / "+i->first.toString());}
             if(s.input.throttle>.3 && s.body.speed()<2 && (!s.input.pivot || fabs(s.body.angular.dot(s.body.up()))<.05) && !s.driver.stopped)s.blockedTime+=elapsed;else s.blockedTime=0;
             if(s.blockedTime>4){s.driver.stop();s.planning=false;s.connecting=false;s.journey.fallback();s.blockedTime=0;messages[i->first]="Vehicle obstructed; replanning.";}
-            if(actor && s.body.ignition && !s.destinations.empty())s.diagnosticTime+=elapsed;else s.diagnosticTime=0;
+            const bool manual=cars::sameHandle(manualVehicle,i->first);
+            if(actor && s.body.ignition && (!s.destinations.empty() || (manual && (s.input.throttle>0 || s.body.speed()>2)))) {
+                if(s.diagnosticTime==0)s.diagnosticWallStart=GetTickCount();
+                s.diagnosticTime+=elapsed;
+            } else s.diagnosticTime=0;
             if(s.diagnosticTime>=5) {
-                s.diagnosticTime=0;std::ostringstream log;log<<"Project Cars: driving sample / "<<i->first.toString()<<" / kmh="<<s.body.speed()*.36<<" / throttle="<<s.input.throttle<<" / brake="<<s.input.brake<<" / steer="<<s.input.steer<<" / reverse="<<s.driver.reversing<<" / maneuver="<<s.driver.maneuvering<<" / forward arc="<<s.driver.forwardTurn<<" / mass="<<spec.mass<<" / grade="<<s.body.forward().y<<" / longitudinal="<<s.body.velocity.dot(s.body.forward())<<" / arriving="<<s.driver.arriving<<" / remaining="<<s.driver.remaining(s.body.position)<<" / contacts="<<s.body.contacts<<" / waypoint="<<s.driver.next<<" of "<<s.driver.points.size()<<" / planning="<<s.planning<<" / suppressed orders="<<s.orderStream.suppressed;DebugLog(log.str());
+                const double simulationSeconds=s.diagnosticTime;
+                const double wallSeconds=(GetTickCount()-s.diagnosticWallStart)*.001;
+                s.diagnosticTime=0;std::ostringstream log;log<<"Project Cars: driving sample / "<<i->first.toString()
+                    <<" / mode="<<(manual?"manual":"route")<<" / simSeconds="<<simulationSeconds<<" / realSeconds="<<wallSeconds<<" / kmh="<<s.body.speed()*.36<<" / throttle="<<s.input.throttle<<" / brake="<<s.input.brake<<" / steer="<<s.input.steer<<" / reverse="<<s.driver.reversing<<" / maneuver="<<s.driver.maneuvering<<" / forward arc="<<s.driver.forwardTurn<<" / mass="<<spec.mass<<" / grade="<<s.body.forward().y<<" / longitudinal="<<s.body.velocity.dot(s.body.forward())<<" / arriving="<<s.driver.arriving<<" / remaining="<<s.driver.remaining(s.body.position)<<" / contacts="<<s.body.contacts<<" / waypoint="<<s.driver.next<<" of "<<s.driver.points.size()<<" / planning="<<s.planning<<" / suppressed orders="<<s.orderStream.suppressed;DebugLog(log.str());
             }
             if(!s.recovery.isNull()) {
                 Character* worker=s.recovery.getCharacter();
@@ -554,7 +564,7 @@ void physicsUpdate(PhysicsActual* physics) {
             moveVehicleTurret(b);updatePassengers(b);
             s.healthyPhysics+=elapsed;if(s.healthyPhysics>=10)s.automaticRetries=0;
             if(actor && actor->getMovement()) {
-                actor->getMovement()->_setPositionDirectionAndTeleport(rigWorld(b,cars::lightSeat.position),b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y));
+                actor->getMovement()->_setPositionDirectionAndTeleport(rigWorld(b,driverAnchor(b)),b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y));
                 if(s.body.contacts && s.body.speed()>10 && actor->getStats())skills[actor->getStats()].handlingXp=cars::validVehicleXp(skills[actor->getStats()].handlingXp+elapsed*4);
             }
             if(spec.trackMask && !s.trackVisualFailed && (s.trackVisualStamp<0 || s.body.clock<s.trackVisualStamp || s.body.clock-s.trackVisualStamp>=1.0/30)){
@@ -565,7 +575,7 @@ void physicsUpdate(PhysicsActual* physics) {
             for(unsigned child=0;child<node->numChildren();++child)if(node->getChild(child)->getName()==std::string(nodePrefix)+"Steering_Wheel")
                 // Axis points toward the driver: positive is counterclockwise
                 // as viewed from the seat, matching a left steering command.
-                node->getChild(child)->setOrientation(Ogre::Quaternion(Ogre::Radian(float(s.body.steering*2.5)),vector(cars::steeringAxis())));
+                node->getChild(child)->setOrientation(Ogre::Quaternion(Ogre::Radian(float(s.body.steering*(motorcycleFrame(b)?1:2.5))),motorcycleFrame(b)?Ogre::Vector3::UNIT_Y:vector(cars::steeringAxis())));
             for(unsigned child=0;child<node->numChildren();++child) {
                 Ogre::Node* wheel=node->getChild(child);const std::string& name=wheel->getName();
                 const char* hubs[]={"FL","FR","RL","RR"};
@@ -575,7 +585,14 @@ void physicsUpdate(PhysicsActual* physics) {
                     wheel->setOrientation(Ogre::Quaternion(Ogre::Radian(float(hub<2?s.body.steering:0)),Ogre::Vector3::UNIT_Y)*Ogre::Quaternion(Ogre::Radian(float(-s.body.wheelSpin)),Ogre::Vector3::UNIT_Z));
                     // All wheel armor exports share the owning wheel's pivot.
                     Ogre::Vector3 hubPosition=wheel->getPosition();
-                    hubPosition.y=float((10*b->getScale()+spec.mountHeight-spec.travel+s.body.compression[hub])/b->getScale());
+                    if(motorcycleFrame(b) && hub==0) {
+                        // Keep the front hub aligned with the fork as it turns
+                        // around the headstock. Suspension owns the vertical offset.
+                        hubPosition.x=6.4f+3.9f*float(cos(s.body.steering));
+                        hubPosition.z=-3.9f*float(sin(s.body.steering));
+                    }
+                    if(!xsmallFrame(b) || spec.wheelMask)
+                        hubPosition.y=float((massCenter(b).y+spec.mountHeight-spec.travel+s.body.compression[hub])/b->getScale());
                     wheel->setPosition(hubPosition);break;
                 }
             }

@@ -134,7 +134,7 @@ void vehicleCameraUpdate(CameraClass* camera,bool enabled) {
     updateVehiclePointer(allowed);
     const DWORD now=GetTickCount();
     vehicleView.smoothFollow(view.rotation,vehicleCameraStamp?(now-vehicleCameraStamp)*.001:0);vehicleCameraStamp=now;
-    cars::VehicleCameraPose pose=vehicleView.pose(view.anchor,view.rotation,view.scale);
+    cars::VehicleCameraPose pose=vehicleView.pose(view.anchor,view.rotation,view.scale,view.extraSmall);
     if(!vehicleView.firstPerson())pose.eye=cars::vehicleCameraClearance(pose);
     applyVehicleCameraPose(camera,render,pose);
     cameraHold.remember(pose,vehicleRenderOrigin(render));

@@ -28,7 +28,7 @@ struct ManualDriver {
         // Manual input shares the route driver's skill-dependent steering slew.
         double target=(keys.left?1.:0.)-(keys.right?1.:0.);
         if(!keys.left && !keys.right)target=sin(body.clock*(1.1+.5*skill))*.065*(1-skill)*bounded(body.speed()/spec.maxSpeed,0,1);
-        steeringCommand+=bounded(target-steeringCommand,-dt*(.8+2.2*skill),dt*(.8+2.2*skill));out.steer=steeringCommand;
+        steeringCommand+=bounded(target-steeringCommand,-dt*spec.steeringResponse*(.8+2.2*skill),dt*spec.steeringResponse*(.8+2.2*skill));out.steer=steeringCommand;
         if(keys.forward && keys.back)return out;
         if(!keys.forward && !keys.back){out.brake=0;if(spec.trackMask==3 && keys.left!=keys.right){out.pivot=true;out.throttle=fabs(out.steer)*.6;}return out;} // belts counter-rotate with A/D; release pedals to coast
         const double longitudinal=body.velocity.dot(body.forward());
@@ -37,7 +37,14 @@ struct ManualDriver {
         if((wantReverse && longitudinal>2) || (!wantReverse && longitudinal<-2))return out;
         reversing=wantReverse;out.reverse=reversing;out.brake=0;
         const double limit=reversing?25.:spec.maxSpeed;
-        out.throttle=bounded((limit-fabs(longitudinal))/8.,0,1);
+        const double progress=wantReverse?-longitudinal:longitudinal;
+        const double speedError=limit-progress;
+        // Keep supplying the force needed to hold the speed. Releasing the
+        // pedal still coasts, and a direction change still applies the brakes.
+        const double grade=body.forward().y*(wantReverse?-1:1);
+        const double drag=spec.rollingDrag*limit+spec.mass*.0005*limit*limit;
+        const double holdingForce=drag+spec.mass*spec.gravity*grade;
+        out.throttle=speedError<0?0:bounded(holdingForce/spec.engineForce+speedError/8.,0,1);
         return out;
     }
 };

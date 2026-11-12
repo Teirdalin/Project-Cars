@@ -61,7 +61,7 @@ bool Catalog::validate(std::string& error) const {
             error = "Invalid part: " + i->first; return false;
         }
     }
-    const char* required[] = { "engine", "tank", "wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr" };
+    const char* required[] = { "engine", "tank", "wheel_fl", "wheel_rl", "wheel_fr", "wheel_rr" };
     for (std::map<std::string, FrameDef>::const_iterator i = frames.begin(); i != frames.end(); ++i) {
         const FrameDef& f = i->second;
         if (!validToken(f.id) || i->first != f.id || !positive(f.buildWork, 1e7) ||
@@ -70,7 +70,7 @@ bool Catalog::validate(std::string& error) const {
             f.seats < 1 || f.seats > 16 || f.slots.size() > 64) {
             error = "Invalid frame: " + i->first; return false;
         }
-        for (unsigned r = 0; r < 6; ++r) if (f.slots.find(required[r]) == f.slots.end()) {
+        for (unsigned r = 0; r < (f.id=="motorcycle_frame"?4u:6u); ++r) if (f.slots.find(required[r]) == f.slots.end()) {
             error = "Missing required slot: " + f.id + "/" + required[r]; return false;
         }
         for (unsigned seat = 0; seat < f.seats; ++seat) if (f.slots.find(seatSlot(seat)) == f.slots.end()) {

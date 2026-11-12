@@ -34,8 +34,8 @@ bool manualDriving();
 void endManualDriving();
 void updateManualDriving(const ManualDrivingKeys&);
 struct ManualVehicleView {
-    hand vehicle;RigPoint anchor;BodyRotation rotation;double scale;bool ready;
-    ManualVehicleView():scale(1),ready(false){}
+    hand vehicle;RigPoint anchor;BodyRotation rotation;double scale;bool ready,extraSmall;
+    ManualVehicleView():scale(1),ready(false),extraSmall(false){}
 };
 ManualVehicleView manualVehicleView();
 RigPoint vehicleCameraClearance(const VehicleCameraPose&);

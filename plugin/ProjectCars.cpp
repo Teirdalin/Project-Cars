@@ -33,7 +33,7 @@ bool loadCatalog(std::string& error) {
 static int startCars() {
     if (g_started) return 1;
     g_started = true;
-    DebugLog("Project Cars 0.8.16 moving turret and driver selection fix; build " __DATE__ " " __TIME__);
+    DebugLog("Project Cars 0.8.19 vehicle speed tuning; build " __DATE__ " " __TIME__);
     try {
         std::string error;
         if (!loadCatalog(error)) { ErrorLog("Project Cars disabled: " + error); return 1; }

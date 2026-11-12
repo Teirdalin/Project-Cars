@@ -106,9 +106,9 @@ void prepareDriverGrips() {
         // scale and world origin shifts, instead of assuming the actor's yaw.
         Ogre::Vector3 shift=b->getRootNode()->_getDerivedPosition()-b->getPosition();
         targets.rotation=anim->node->_getDerivedOrientation().Inverse()*b->rot*Ogre::Quaternion(Ogre::Degree(90),Ogre::Vector3::UNIT_Y);
-        targets.pelvis=point(anim->node->convertWorldToLocalPosition(rigWorld(b,cars::lightSeatPelvis.position)+shift));
-        targets.left=point(anim->node->convertWorldToLocalPosition(rigWorld(b,cars::steeringGrip(true,i->second.body.steering*2.5))+shift));
-        targets.right=point(anim->node->convertWorldToLocalPosition(rigWorld(b,cars::steeringGrip(false,i->second.body.steering*2.5))+shift));
+        targets.pelvis=point(anim->node->convertWorldToLocalPosition(rigWorld(b,driverAnchor(b,true))+shift));
+        targets.left=point(anim->node->convertWorldToLocalPosition(rigWorld(b,driverGrip(b,true,i->second.body.steering))+shift));
+        targets.right=point(anim->node->convertWorldToLocalPosition(rigWorld(b,driverGrip(b,false,i->second.body.steering))+shift));
         next[anim->skeleton]=targets;
     }
     for(std::map<hand,std::map<std::string,MountedPerson> >::const_iterator v=passengers.begin();v!=passengers.end();++v) {

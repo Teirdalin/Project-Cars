@@ -30,8 +30,10 @@ void syncModuleCollisions(Building* b,PhysicsActual* physics) {
         for(unsigned n=0;n<i->second.visuals.size();++n){forgetPart(b->physical->staticEnts,i->second.visuals[n]);delete i->second.visuals[n];}
         current.erase(i++);
     }
-    for(size_t n=0;n<cars::workshopVisualCount;++n) {
-        const cars::WorkshopVisual& v=cars::workshopVisuals[n];if(!wanted.count(v.component)||current.count(v.component))continue;
+    size_t visualCount=0;
+    const cars::WorkshopVisual* visuals=frameVisuals(b,visualCount);
+    for(size_t n=0;n<visualCount;++n) {
+        const cars::WorkshopVisual& v=visuals[n];if(!wanted.count(v.component)||current.count(v.component))continue;
         GameData* part=ou->gamedata.getData(v.partId,BUILDING_PART);if(!part)throw std::runtime_error("Missing vehicle collision definition");
         const unsigned first=b->physical->parts.size(),visual=b->physical->staticEnts.size();
         // Native construction preserves owner userdata, offsets, scale, material
@@ -61,10 +63,23 @@ std::string struckMount(Building* b,const cars::RigPoint& worldFrom,const cars::
     for(size_t n=0;n<cars::workshopMountCount;++n) {
         const cars::WorkshopSlot& slot=cars::workshopMounts[n];Item* item=fittedItem(b,slot.id);if(!item||!fitted(b,slot.id))continue;
         const std::string component=cars::workshopComponent(slot,item->getGameData()->stringID);
+        if(xsmallFrame(b)) {
+            size_t count=0;
+            const cars::WorkshopVisual* visuals=frameVisuals(b,count);
+            const cars::PickPlane (*planes)[6]=compactPickPlanes(b);
+            for(size_t h=1;h<count;++h)
+                if(component==visuals[h].component &&
+                   cars::sweptPartContact(a,z,planes[h],6,radius/scale,time))result=slot.id;
+            continue;
+        }
         for(unsigned h=0;h<cars::vehiclePickHullCount;++h) {
             const cars::PickHull& hull=cars::vehiclePickHulls[h];if(component!=hull.component)continue;
             if(cars::sweptPartContact(a,z,cars::vehiclePickPlanes+hull.first,hull.count,radius/scale,time))result=slot.id;
         }
+    }
+    if(xsmallFrame(b)) {
+        if(result.empty() && cars::sweptPartContact(a,z,compactPickPlanes(b)[0],6,radius/scale,time))return "frame";
+        return result;
     }
     if(result.empty())for(unsigned h=0;h<cars::vehiclePickHullCount;++h){
         const cars::PickHull& hull=cars::vehiclePickHulls[h];if(std::string(hull.component)!="Frame")continue;

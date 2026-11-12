@@ -24,6 +24,12 @@ inline void removeMountAndDependents(std::map<std::string,std::string>& state,co
     for(std::map<std::string,std::string>::iterator i=state.begin();i!=state.end();)
         if(wheelForPlate(i->first)==slot)state.erase(i++);else ++i;
 }
+inline bool workshopMountSupported(bool extraSmall, const std::string& id, bool motorcycle=false) {
+    if(motorcycle && (id=="wheel_fr" || id=="wheel_rr"))return false;
+    return !extraSmall || id == "engine" || id == "tank" || id == "seat_driver" ||
+        id == "steering" || id == "wheel_fl" || id == "wheel_fr" ||
+        id == "wheel_rl" || id == "wheel_rr";
+}
 struct WorkshopSnapshot {
     std::string vehicleName, actorName, actorId, status;
     std::map<std::string,int> inventory;
@@ -34,8 +40,8 @@ struct WorkshopSnapshot {
     bool queueRunning;
     double fuel, tankCapacity;
     double mechanics,handling,workProgress;
-    bool inventoryReadable, fittingAllowed, working;
-    WorkshopSnapshot() : queueRunning(false), fuel(0), tankCapacity(0), mechanics(1), handling(1), workProgress(0), inventoryReadable(false), fittingAllowed(false), working(false) {}
+    bool inventoryReadable, fittingAllowed, working, extraSmall, motorcycle;
+    WorkshopSnapshot() : queueRunning(false), fuel(0), tankCapacity(0), mechanics(1), handling(1), workProgress(0), inventoryReadable(false), fittingAllowed(false), working(false), extraSmall(false), motorcycle(false) {}
 };
 struct WorkshopRequest {std::string target,actor,slot,item;bool remove;WorkshopRequest():remove(false) {}};
 struct WorkshopVisual {const char* component;const char* mesh;float x,y,z;const char* partId;};

@@ -52,7 +52,7 @@ void draw(){
     c=makeCombo(402,104,106,"PC_DebugQuantity");for(unsigned i=0;i<4;++i){std::ostringstream s;s<<quantities[i];c->addItem(s.str());}c->setIndexSelected(quantityIndex<4?quantityIndex:0);button(520,104,136,"Spawn",cars::DebugSpawnItem);
     label(24,146,630,26,"Items go into the selected character's inventory.");
     label(24,188,610,24,"SPAWN VEHICLE");c=makeCombo(24,220,484,"PC_DebugPreset");for(int i=0;i<cars::DebugPresetCount;++i)c->addItem(cars::debugPresetName(i));c->setIndexSelected(presetIndex<cars::DebugPresetCount?presetIndex:0);button(520,220,136,"Spawn",cars::DebugSpawnVehicle);
-    label(24,262,630,36,"Buggies spawn fitted and fueled, with the engine off.");
+    label(24,262,630,36,"Ready-to-drive presets spawn fueled with the engine off.");
     label(24,310,240,26,"VEHICLE ACTIONS");c=makeCombo(278,302,378,"PC_DebugScope");c->addItem("Selected vehicles / occupants");c->addItem("Nearby vehicles (50 m)");c->setIndexSelected(scopeIndex<2?scopeIndex:1);
     button(24,350,306,"Refill vehicles",cars::DebugRefill);button(342,350,314,"Repair vehicles",cars::DebugRepair);
     button(24,398,306,"Brake vehicles",cars::DebugBrake);button(342,398,314,"Stop engines",cars::DebugStopEngines);

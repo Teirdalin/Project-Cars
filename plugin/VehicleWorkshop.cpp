@@ -57,6 +57,13 @@ void image(MyGUI::Widget* parent,int x,int y,int w,int h,const cars::WorkshopIte
     picture->setNeedMouseFocus(false);
     try {picture->setImageTexture(item.icon);} catch (...) {picture->setVisible(false);}
 }
+std::vector<size_t> visibleMounts() {
+    std::vector<size_t> mounts=cars::workshopSlots(cars::workshopMounts,cars::workshopMountCount,systemIndex,regionIndex);
+    for(std::vector<size_t>::iterator i=mounts.begin();i!=mounts.end();)
+        if(!cars::workshopMountSupported(data.extraSmall,cars::workshopMounts[*i].id,data.motorcycle))i=mounts.erase(i);
+        else ++i;
+    return mounts;
+}
 std::vector<size_t> compatible(size_t mount) {
     std::vector<size_t> result;
     if(mount>=cars::workshopMountCount) return result;
@@ -71,6 +78,15 @@ void choose(size_t mount) {
     std::map<std::string,std::string>::const_iterator installed=data.installed.find(cars::workshopMounts[mount].id);
     if(installed!=data.installed.end())for(size_t i=0;i<choices.size();++i)
         if(installed->second==cars::workshopItems[choices[i]].id)selectedItem=choices[i];
+}
+const char* mountName(const cars::WorkshopSlot& slot) {
+    if(data.motorcycle) {
+        const std::string id=slot.id;
+        if(id=="wheel_fl")return "Front wheel";
+        if(id=="wheel_rl")return "Rear wheel";
+        if(id=="steering")return "Fork and handlebars";
+    }
+    return slot.name;
 }
 bool occupied(const char* slot) {return data.installed.find(slot)!=data.installed.end();}
 bool dieselInstalled(){return occupied("engine") && data.installed.find("engine")->second==cars::dieselEngineItemId;}
@@ -121,7 +137,7 @@ void inspector(MyGUI::Widget* p) {
             std::string label=slot.system==2?(i==0?"Light":i==1?"Medium":"Heavy"):(id==cars::dieselEngineItemId?"Diesel":id=="21-Project Cars.mod"?"Gasoline":id=="155-Project Cars.mod"?"Pole":id=="156-Project Cars.mod"?"Cage":id=="131-Project Cars.mod"?"Cargo":id=="172-Project Cars.mod"?"Turret":i==0?"Rack":"Spikes");
             button(panel,18+static_cast<int>(i)*(w+6),276,w,31,label,"item:"+number(static_cast<int>(choices[i])),selectedItem==choices[i])->setEnabled(!occupied(slot.id));
         }
-    } else text(panel,18,260,296,40,"Fits: "+wrap(slot.name,28,2),muted);
+    } else text(panel,18,260,296,40,"Fits: "+wrap(mountName(slot),28,2),muted);
     const bool queued=data.queued.count(slot.id)!=0;
     button(panel,18,321,143,35,"Queue install","install")->setEnabled(data.fittingAllowed && !queued && !occupied(slot.id));
     button(panel,173,321,143,35,queued?"Unqueue":"Queue remove",queued?"unqueue":"remove")->setEnabled(queued || (data.fittingAllowed && occupied(slot.id)));
@@ -151,11 +167,12 @@ void mountGrid(MyGUI::Widget* p,const std::vector<size_t>& mounts) {
         const std::vector<size_t> choices=compatible(index);
         if(systemIndex!=2 && !choices.empty()) image(tile,8,9,47,47,cars::workshopItems[choices[0]]);
         int inset=systemIndex==2?12:63;
-        text(tile,inset,9,220-inset-8,37,wrap(slot.name,systemIndex==2?21:15,2),chosen?amber:ivory);
+        text(tile,inset,9,220-inset-8,37,wrap(mountName(slot),systemIndex==2?21:15,2),chosen?amber:ivory);
         const bool queued=data.queued.count(slot.id)!=0;
         const bool broken=data.condition.count(slot.id) && data.condition[slot.id]<=0;
         const bool wheelAlternative=std::string(slot.id).find("wheel_")==0 && (occupied("track_l")||occupied("track_r"));
-        text(tile,inset,rowHeight-34,220-inset-8,19,queued?data.queued.find(slot.id)->second:broken?"DESTROYED":occupied(slot.id)?"INSTALLED":wheelAlternative?"TRACKS FITTED":slot.required?"EMPTY / REQUIRED":"EMPTY",queued||broken?amber:occupied(slot.id)?green:muted);
+        const bool required=slot.required || (data.extraSmall && std::string(slot.id)=="steering");
+        text(tile,inset,rowHeight-34,220-inset-8,19,queued?data.queued.find(slot.id)->second:broken?"DESTROYED":occupied(slot.id)?"INSTALLED":wheelAlternative?"TRACKS FITTED":required?"EMPTY / REQUIRED":"EMPTY",queued||broken?amber:occupied(slot.id)?green:muted);
     }
     if(mounts.size()>6) {
         button(p,204,535,68,29,"<","prev")->setEnabled(page>0);
@@ -200,22 +217,22 @@ void draw() {
         edit->setCaption(data.vehicleName);edit->setNeedMouseFocus(true);edit->setNeedKeyFocus(true);
         button(p,462,57,92,34,"SAVE","rename_save");
     }
-    text(p,24,55,760,23,"LIGHT FRAME",muted);
+    text(p,24,55,760,23,data.motorcycle?"MOTORCYCLE":data.extraSmall?"EXTRA-SMALL FRAME":"LIGHT FRAME",muted);
     text(p,801,29,161,25,data.fuel>0 && occupied("engine") && occupied("seat_driver")?"ASSEMBLING":"UNPOWERED",amber);
     button(p,975,21,43,35,"X","close");
     unsigned wheels=0;const char* wheelSlots[]={"wheel_fl","wheel_fr","wheel_rl","wheel_rr"};
     for(unsigned i=0;i<4;++i) if(occupied(wheelSlots[i]))++wheels;
     metric(p,20,"ENGINE",occupied("engine")?"FITTED":"MISSING",occupied("engine"));
     unsigned tracks=(occupied("track_l")?1:0)+(occupied("track_r")?1:0);
-    metric(p,272,tracks?"TRACKS":"WHEELS",number(tracks?tracks:wheels)+(tracks?" / 2 FITTED":" / 4 FITTED"),tracks?tracks==2:wheels==4);
+    metric(p,272,tracks?"TRACKS":"WHEELS",number(tracks?tracks:wheels)+(tracks || data.motorcycle?" / 2 FITTED":" / 4 FITTED"),tracks?tracks==2:wheels==(data.motorcycle?2:4));
     metric(p,524,"DRIVER SEAT",occupied("seat_driver")?"FITTED":"EMPTY",occupied("seat_driver"));
     metric(p,776,"FUEL",data.tankCapacity>0?decimal(data.fuel)+" L":"NO TANK",data.fuel>0);
     MyGUI::Widget* nav=slab(p,20,170,160,410);
     text(nav,14,15,134,24,"SYSTEMS",muted);
-    for(int i=0;i<6;++i) button(nav,10,51+i*49,140,40,systemNames[i],"system:"+number(i),systemIndex==i);
+    for(int i=0;i<6;++i) button(nav,10,51+i*49,140,40,systemNames[i],"system:"+number(i),systemIndex==i)->setEnabled(!data.extraSmall || (i!=2 && i!=3));
     text(nav,12,354,140,52,"MECHANICS "+decimal(data.mechanics)+"\nHANDLING "+decimal(data.handling),muted);
     slab(p,188,170,482,410);
-    const std::vector<size_t> mounts=cars::workshopSlots(cars::workshopMounts,cars::workshopMountCount,systemIndex,regionIndex);
+    const std::vector<size_t> mounts=visibleMounts();
     if(systemIndex==4)fuel(p);else if(systemIndex==5)queueView(p);else mountGrid(p,mounts);
     inspector(p);
     text(p,24,597,986,23,data.actorName.empty()?"SELECT A CHARACTER TO FIT PARTS":"PARTS CARRIED BY: "+wrap(data.actorName,60,1),muted);
@@ -227,7 +244,7 @@ void draw() {
     MyGUI::InputManager* input=MyGUI::InputManager::getInstancePtr();if(input)input->addWidgetModal(p);
 }
 void selectFirst() {
-    page=0;std::vector<size_t> mounts=cars::workshopSlots(cars::workshopMounts,cars::workshopMountCount,systemIndex,regionIndex);
+    page=0;std::vector<size_t> mounts=visibleMounts();
     if(!mounts.empty())choose(mounts[0]);
 }
 bool action(const std::string& value) {
@@ -256,14 +273,14 @@ bool action(const std::string& value) {
         }
         return true;
     }
-    if(value.substr(0,7)=="system:") {int n=atoi(value.substr(7).c_str());if(n>=0 && n<6){systemIndex=n;selectFirst();}}
+    if(value.substr(0,7)=="system:") {int n=atoi(value.substr(7).c_str());if(n>=0 && n<6 && (!data.extraSmall || (n!=2 && n!=3))){systemIndex=n;selectFirst();}}
     else if(value.substr(0,7)=="region:") {int n=atoi(value.substr(7).c_str());if(n>=0 && n<7){regionIndex=n;selectFirst();}}
     else if(value.substr(0,6)=="mount:") {size_t n=static_cast<size_t>(atoi(value.substr(6).c_str()));
-        if(n<cars::workshopMountCount && cars::workshopMounts[n].system==systemIndex && (systemIndex!=2 || cars::workshopMounts[n].region==regionIndex))choose(n);}
+        if(n<cars::workshopMountCount && cars::workshopMountSupported(data.extraSmall,cars::workshopMounts[n].id,data.motorcycle) && cars::workshopMounts[n].system==systemIndex && (systemIndex!=2 || cars::workshopMounts[n].region==regionIndex))choose(n);}
     else if(value.substr(0,5)=="item:") {size_t n=static_cast<size_t>(atoi(value.substr(5).c_str()));
         if(n<cars::workshopItemCount && cars::workshopAccepts(cars::workshopMounts[selectedMount],cars::workshopItems[n].id))selectedItem=n;}
     else if(value=="prev" && page>0)--page;
-    else if(value=="next") {std::vector<size_t> m=cars::workshopSlots(cars::workshopMounts,cars::workshopMountCount,systemIndex,regionIndex);if(systemIndex==5?static_cast<size_t>((page+1)*queuePageSize)<data.queueSlots.size():static_cast<size_t>((page+1)*6)<m.size())++page;}
+    else if(value=="next") {std::vector<size_t> m=visibleMounts();if(systemIndex==5?static_cast<size_t>((page+1)*queuePageSize)<data.queueSlots.size():static_cast<size_t>((page+1)*6)<m.size())++page;}
     return true;
 }
 }

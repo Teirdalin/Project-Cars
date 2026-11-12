@@ -22,14 +22,14 @@ bool availablePersonMount(Building* b,const std::string& slot,const std::string&
     return design.empty()||fittedDesign(b,slot,design);
 }
 cars::RigPoint personAnchor(Building* b,const std::string& slot,bool pelvis=false) {
-    if(slot=="seat_driver")return pelvis?cars::lightSeatPelvis.position:cars::lightSeat.position;
+    if(slot=="seat_driver")return driverAnchor(b,pelvis);
     if(slot=="front_attachment")return cars::RigPoint(24.4,6.6,0);
     if(slot=="cargo")return fittedDesign(b,slot,"155-Project Cars.mod")?cars::RigPoint(-25.4,10.9,0):cars::RigPoint(-18.3,pelvis?16.5:11.4,0);
     const std::string component=slot=="seat_passenger_l"?"Seat_PassengerL":"Seat_PassengerR";
     // Rear seats duplicate the driver's mesh: its center is 5.022156 above
     // the standing anchor and 0.772156 above the seated pelvis anchor.
     for(size_t n=0;n<cars::workshopVisualCount;++n){const cars::WorkshopVisual& v=cars::workshopVisuals[n];if(component==v.component)return cars::RigPoint(v.x,v.y-(pelvis?.772156:5.022156),v.z);}
-    return cars::lightSeat.position;
+    return driverAnchor(b);
 }
 bool poleMount(Building* b,const std::string& slot){return (slot=="front_attachment"||slot=="cargo") && fittedDesign(b,slot,"155-Project Cars.mod");}
 void savePassengers(Building* b,GameData* state) {

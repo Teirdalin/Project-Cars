@@ -37,14 +37,21 @@ struct VehicleCameraState {
         yaw=bounded(yaw-dx*.0025,-2.7,2.7);pitch=bounded(pitch-dy*.0025,-1.2,1.2);
     }
     void zoom(double wheel){if(mode==Follow && _finite(wheel))distance=bounded(distance-wheel*.08,40,200);}
-    VehicleCameraPose pose(const RigPoint& anchor,const BodyRotation& body,double scale)const {
+    VehicleCameraPose pose(const RigPoint& anchor,const BodyRotation& body,double scale,bool extraSmall=false)const {
         VehicleCameraPose p;
         // Follow eases around chassis yaw and keeps a level horizon. First
         // person stays attached to chassis pitch/roll with its own look offset.
         const BodyRotation base=firstPerson()?body:cameraAxis(followReady?followYaw:atan2(-body.rotate(RigPoint(1,0,0)).z,body.rotate(RigPoint(1,0,0)).x),RigPoint(0,1,0));
         p.rotation=base*cameraAxis(-1.5707963267948966+(firstPerson()?yaw:0),RigPoint(0,1,0))*cameraAxis(firstPerson()?pitch:-.32,RigPoint(1,0,0));
-        if(firstPerson()){p.eye=anchor+body.rotate(RigPoint(-3.5,22,-.099404)*scale);p.focus=p.eye+p.rotation.rotate(RigPoint(0,0,-20*scale));}
-        else {p.focus=anchor+body.rotate(RigPoint(-2,14,0)*scale);p.eye=p.focus-p.rotation.rotate(RigPoint(0,0,-distance*scale));}
+        if(firstPerson()) {
+            RigPoint eye(-3.5,22,-.099404);
+            if(extraSmall)eye=eye+xsmallPelvis-lightSeatPelvis.position;
+            p.eye=anchor+body.rotate(eye*scale);
+            p.focus=p.eye+p.rotation.rotate(RigPoint(0,0,-20*scale));
+        } else {
+            p.focus=anchor+body.rotate((extraSmall?RigPoint(-1,10,0):RigPoint(-2,14,0))*scale);
+            p.eye=p.focus-p.rotation.rotate(RigPoint(0,0,-distance*scale));
+        }
         return p;
     }
 };

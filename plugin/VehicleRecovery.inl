@@ -45,7 +45,9 @@ bool beginRecovery(Building* b,Character* actor) {
         root->setName("ProjectCars_RecoveryGhost");recoveryPlacement.node=root->getId();root->setScale(b->getScale(),b->getScale(),b->getScale());root->setVisible(false,true);
         std::set<std::string> components;components.insert("Frame");
         for(unsigned n=0;n<cars::workshopMountCount;++n){const cars::WorkshopSlot& slot=cars::workshopMounts[n];Item* item=fittedItem(b,slot.id);if(item && fitted(b,slot.id))components.insert(cars::workshopComponent(slot,item->getGameData()->stringID));}
-        for(unsigned n=0;n<cars::workshopVisualCount;++n){const cars::WorkshopVisual& v=cars::workshopVisuals[n];if(!components.count(v.component))continue;
+        size_t visualCount=0;
+        const cars::WorkshopVisual* visuals=frameVisuals(b,visualCount);
+        for(size_t n=0;n<visualCount;++n){const cars::WorkshopVisual& v=visuals[n];if(!components.count(v.component))continue;
             Ogre::Entity* e=scene->createEntity(registerMesh(v.mesh),"ProjectCarsVehicleParts");e->setMaterialName(recoveryMaterial(false)->getName());e->setCastShadows(false);e->setQueryFlags(0);e->setRenderQueueGroup(83);
             Ogre::SceneNode* c=root->createChildSceneNode(Ogre::SCENE_DYNAMIC,Ogre::Vector3(v.x,v.y,v.z));c->attachObject(e);}
     }catch(const std::exception& e){ErrorLog(std::string("Project Cars: could not create recovery preview: ")+e.what());cancelRecovery();messages[b->getHandle()]="Could not create recovery preview. See the Project Cars log.";return false;}
@@ -89,7 +91,7 @@ void updateRecovery(const Ogre::Ray& cursor,bool confirm,int turn) {
     if(recoveryPlacement.request){std::vector<cars::RigPoint> path;int result=pollNativePath(recoveryPlacement.request,path);if(result){recoveryPlacement.reachable=result>0;if(result<0){cancelNativePath(recoveryPlacement.request);recoveryPlacement.changed=GetTickCount();}}}
     bool valid=good && recoveryPlacement.reachable;
     recoveryPlacement.status=valid?"Left click: place vehicle. Q/E: rotate. Escape/right click: cancel.":good?"Checking a walking route to the vehicle...":"Choose clear, dry, gentle ground within 50 metres.";
-    cars::ChassisSpec spec=driveSpec(b);cars::RigPoint center=target;center.y=height-spec.mountHeight+spec.radius+spec.travel*.65;
+    cars::ChassisSpec spec=driveSpec(b);cars::RigPoint center=target;center.y=height+(xsmallFrame(b) && !spec.wheelMask?spec.halfHeight:-spec.mountHeight+spec.radius+spec.travel*.65);
     Ogre::Vector3 origin=vector(center-recoveryPlacement.rotation.rotate(massCenter(b)));
     ghost->setPosition(origin+shift);ghost->setOrientation(quaternion(recoveryPlacement.rotation));ghost->setVisible(true,true);
     for(unsigned n=0;n<ghost->numChildren();++n){Ogre::SceneNode* c=static_cast<Ogre::SceneNode*>(ghost->getChild(n));for(unsigned j=0;j<c->numAttachedObjects();++j)static_cast<Ogre::Entity*>(c->getAttachedObject(j))->setMaterialName(recoveryMaterial(valid)->getName());}

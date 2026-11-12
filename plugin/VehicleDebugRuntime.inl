@@ -55,8 +55,8 @@ void debugSpawnVehicle(Character* actor,int preset) {
     if(!debugSpawnedVehicle.isNull()){tell("A debug vehicle is still loading.");return;}
     if(preset<0 || preset>=cars::DebugPresetCount || !actor || !actor->isValid() || !actor->isPlayerCharacter() || !actor->getInventory()){tell("Select a character and vehicle preset first.");return;}
     if(!actor->isIndoors().isNull()){tell("Move outside before spawning a vehicle.");return;}
-    GameData* def=ou->gamedata.getData("10-Project Cars.mod",BUILDING);
-    if(!def || !ou->theFactory){tell("Light frame definition is unavailable.");return;}
+    GameData* def=ou->gamedata.getData(cars::debugPresetBuildingId(preset),BUILDING);
+    if(!def || !ou->theFactory){tell("Frame definition is unavailable for this preset.");return;}
     // Resolve every preset definition before creating anything.
     for(size_t n=0;n<cars::workshopMountCount;++n){const std::string id=cars::debugPresetItem(preset,cars::workshopMounts[n]);if(!id.empty()&&!ou->gamedata.getData(id,ITEM)){tell("Missing preset item: "+id);return;}}
     const float directions[8][2]={{1,0},{0,1},{-1,0},{0,-1},{.707107f,.707107f},{-.707107f,.707107f},{-.707107f,-.707107f},{.707107f,-.707107f}};
@@ -67,7 +67,8 @@ void debugSpawnVehicle(Character* actor,int preset) {
     Ogre::Vector3 factoryPoint(point.x,0,point.z);
     Building* b=createChestGuarded(ou,def,factoryPoint,actor,&faulted);
     if(faulted || !b || !b->isValid()){tell("Vehicle creation failed; see the log.");return;}
-    b->setName(preset==cars::DebugTrackedBuggy?"Tracked Buggy":preset==cars::DebugBareFrame?"Light Vehicle":"Buggy");
+    if(preset==cars::DebugXSmallQuad || preset==cars::DebugMotorcycle)b->setName(cars::debugPresetName(preset));
+    else b->setName(preset==cars::DebugTrackedBuggy?"Tracked Buggy":preset==cars::DebugBareFrame?"Light Vehicle":"Buggy");
     if(!prepareChestVisuals(b)){tell("Frame created, but its graphics did not initialize.");return;}
     debugSpawnedVehicle=b->getHandle();debugSpawnActor=actor->getHandle();debugSpawnPreset=preset;debugSpawnStarted=debugSpawnChecked=GetTickCount();
     tell(std::string("Preparing ")+cars::debugPresetName(preset)+"...");

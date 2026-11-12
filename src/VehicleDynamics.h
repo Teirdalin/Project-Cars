@@ -40,14 +40,16 @@ struct VehicleEnvironment {
 // Keep its return temporaries aligned as well as its named stack instances.
 struct __declspec(align(16)) ChassisSpec {
     unsigned wheelMask,trackMask;
+    double steeringResponse,rollingDrag;
+    bool motorcycle;
     double mass,halfLength,halfWidth,halfHeight,wheelBase,track,radius,travel,mountHeight,spring,damping,grip,engineForce,brakeForce,maxSpeed,gravity,cageHeight;
-    ChassisSpec():wheelMask(15),trackMask(0),mass(500),halfLength(22),halfWidth(11),halfHeight(8),wheelBase(40),track(24),radius(5.5),travel(4),mountHeight(-2.4),spring(10000),damping(1600),grip(.9),engineForce(18000),brakeForce(35000),maxSpeed(180),gravity(98.1),cageHeight(0){}
+    ChassisSpec():wheelMask(15),trackMask(0),steeringResponse(1),rollingDrag(140),motorcycle(false),mass(500),halfLength(22),halfWidth(11),halfHeight(8),wheelBase(40),track(24),radius(5.5),travel(4),mountHeight(-2.4),spring(10000),damping(1600),grip(.9),engineForce(18000),brakeForce(35000),maxSpeed(180),gravity(98.1),cageHeight(0){}
 };
 inline bool runningGearReady(unsigned wheels,unsigned tracks) {
     return (wheels==15 && tracks==0) || (wheels==0 && tracks==3);
 }
 inline ChassisSpec lightChassisSpec(double scale,double mass) {
-    ChassisSpec s;s.mass=mass;
+    ChassisSpec s;s.mass=mass;s.rollingDrag=110;s.maxSpeed=205;
     s.wheelBase=32.464229;s.track=20.847029;s.radius=5.084398;s.mountHeight=-2.094682;
     // The old box hung below the frame's belly and met small rises before the
     // tires. Give the off-road suspension usable droop and underbody clearance.
@@ -59,9 +61,50 @@ inline ChassisSpec lightChassisSpec(double scale,double mass) {
     s.spring=s.mass*s.gravity/(4*s.travel*.35);s.damping=2*sqrt(s.spring*s.mass*.25)*.65;
     return s;
 }
+inline ChassisSpec xsmallChassisSpec(double scale,double mass,unsigned wheels) {
+    ChassisSpec s;
+    s.mass=mass;
+    s.halfLength=10.7*scale;
+    s.halfWidth=5.35*scale;
+    s.wheelBase=15.2*scale;
+    s.track=8.6*scale;
+    s.radius=(5.084398*.49)*scale;
+    s.travel=2.4*scale;
+    s.mountHeight=-1.62*scale;
+    s.wheelMask=wheels==15?15:0;
+    s.halfHeight=(s.wheelMask?3.4:4.0)*scale;
+    s.engineForce=20500;
+    s.rollingDrag=100;
+    s.brakeForce=26000;
+    s.maxSpeed=145;
+    s.steeringResponse=2.1;
+    s.cageHeight=4.6*scale;
+    s.spring=s.mass*s.gravity/(4*s.travel*.35);
+    s.damping=2*sqrt(s.spring*s.mass*.25)*.65;
+    return s;
+}
+inline ChassisSpec motorcycleChassisSpec(double scale,double mass,unsigned wheels) {
+    ChassisSpec s=xsmallChassisSpec(scale,mass,0);
+    s.motorcycle=true;
+    s.wheelMask=wheels==5?5:0;
+    s.halfLength=11.8*scale;
+    s.halfWidth=3.25*scale;
+    s.halfHeight=3.6*scale;
+    s.wheelBase=21.1*scale;
+    s.track=0;
+    s.radius=3.4*scale;
+    s.travel=2.3*scale;
+    s.mountHeight=-1.585*scale;
+    s.engineForce=21000;
+    s.brakeForce=18500;
+    s.maxSpeed=155;
+    s.spring=mass*s.gravity/(2*s.travel*.35);
+    s.damping=2*sqrt(s.spring*mass*.5)*.7;
+    return s;
+}
 inline void configureTracks(ChassisSpec& s,unsigned sides) {
     s.trackMask=sides&3;s.wheelMask=0;s.maxSpeed*=.55;s.engineForce*=1.5;
-    s.grip=1.15;s.travel*=1.15;
+    s.grip=1.15;s.travel*=1.15;s.rollingDrag=140;
     // Twelve distributed rollers share the same total supported mass.
     s.spring=s.mass*s.gravity/(12*s.travel*.35);s.damping=2*sqrt(s.spring*s.mass/12)*.65;
 }
@@ -104,6 +147,7 @@ struct ChassisBody {
         if(up().y<.7 || speed()>2 || angular.length()>.18)return false;
         unsigned supported=0;const double tolerance=std::min(s.halfWidth,s.halfLength)*.06;
         for(unsigned n=0;n<4;++n) {
+            if(s.motorcycle && s.wheelMask && !(s.wheelMask&(1u<<n)))continue;
             bool gear=s.trackMask?(s.trackMask&(1u<<(n%2)))!=0:(s.wheelMask&(1u<<n))!=0;
             RigPoint local((n<2?1:-1)*(gear?s.wheelBase*.5:s.halfLength*.85),
                 gear?s.mountHeight-s.radius-s.travel+compression[n]:-s.halfHeight,
@@ -115,7 +159,7 @@ struct ChassisBody {
             RigPoint normal=hit.normal.unit();if(normal.y<.866025403784 || normal.dot(up())<.94)return false;
             ++supported;
         }
-        return supported>=3;
+        return supported>=(s.motorcycle && s.wheelMask?2u:3u);
     }
     bool step(double dt,const DrivingInput& input,const ChassisSpec& s,VehicleEnvironment& world) {
         if(!valid()||!_finite(dt)||dt<0||dt>1.0/30||s.mass<=0||s.radius<=0||s.travel<=0||s.halfHeight<=0||s.halfWidth<=0||s.halfLength<=0||s.cageHeight<0||!_finite(input.throttle+input.brake+input.steer+s.mass+s.radius+s.travel+s.mountHeight+s.halfLength+s.halfWidth+s.halfHeight+s.gravity+s.spring+s.damping+s.grip+s.brakeForce+s.engineForce+s.maxSpeed+s.cageHeight))return false;
@@ -123,15 +167,18 @@ struct ChassisBody {
         DrivingInput u=input;u.throttle=bounded(u.throttle,0,1);u.brake=bounded(u.brake,0,1);u.steer=bounded(u.steer,-1,1);
         const bool restingInput=(!ignition || u.brake>=.8 || u.handbrake) && u.throttle==0 && !u.pivot;
         const bool wasSlow=speed()<=2 && angular.length()<=.18;
-        clock+=dt;steering+=bounded(u.steer*.58-steering,-1.2*dt,1.2*dt);
+        clock+=dt;
+        const double steeringStep=1.2*s.steeringResponse*dt;
+        steering+=bounded(u.steer*.58-steering,-steeringStep,steeringStep);
         if(overturned()||fuel<=0)ignition=false;
         if(ignition){fuel=std::max(0.0,fuel-dt*(.002+.014*u.throttle));if(fuel==0)ignition=false;}
         velocity.y-=s.gravity*dt;contacts=0;tireSlip=impact=0;
         RigPoint upVector=up();
         for(int n=0;n<4;++n){compression[n]=0;ground[n].touching=false;}
         for(unsigned n=0;n<6;++n)trackCompression[0][n]=trackCompression[1][n]=0;
-        const int supportCount=s.trackMask?12:4;
-        for(int wheel=0;wheel<supportCount;++wheel) {
+        const int supportCount=s.trackMask?12:s.motorcycle?2:4;
+        const int wheelSlots=s.trackMask?12:4;
+        for(int wheel=0;wheel<wheelSlots;++wheel) {
             const unsigned beltSide=wheel%2;
             if(s.trackMask?!(s.trackMask&(1u<<beltSide)):!(s.wheelMask&(1u<<wheel)))continue;
             RigPoint mount(s.trackMask?s.wheelBase*(.5-(wheel/2)/5.0):(wheel<2?1:-1)*s.wheelBase*.5,s.mountHeight,(beltSide?1:-1)*s.track*.5);
@@ -178,7 +225,7 @@ struct ChassisBody {
                 if(!u.handbrake && u.brake<.5)drive+=bounded(differential,-s.engineForce/supportCount,s.engineForce/supportCount)*(beltSide?1:-1);
             }
             double brake=s.brakeForce*(u.handbrake?1:u.brake)/supportCount;
-            double fx=drive-bounded(longitudinal*s.mass/(supportCount*dt),-brake,brake)-longitudinal*140/supportCount;
+            double fx=drive-bounded(longitudinal*s.mass/(supportCount*dt),-brake,brake)-longitudinal*s.rollingDrag/supportCount;
             double fy=-side*s.mass/(supportCount*dt);double limit=load*s.grip*(u.handbrake && !s.trackMask && wheel>=2?.45:1);
             if(s.trackMask) {
                 // A belt may scrub during a turn, but its whole chassis must
@@ -189,6 +236,16 @@ struct ChassisBody {
             }
             double magnitude=sqrt(fx*fx+fy*fy);if(magnitude>limit && magnitude>0){tireSlip=std::max(tireSlip,bounded((fabs(longitudinal)-12)/70,0,1)*u.brake);fx*=limit/magnitude;fy*=limit/magnitude;}
             forceAt(f*fx+lateral*fy,offset,dt,s);
+        }
+        if(s.motorcycle && contacts==2 && upVector.y>.55) {
+            // A rider balances a single-track vehicle. Apply roll correction
+            // through tire contact, with no correction while airborne.
+            const RigPoint axis=forward();
+            const double roll=atan2(-orientation.rotate(RigPoint(0,0,1)).y,upVector.y);
+            const double forwardSpeed=velocity.dot(axis);
+            const double lean=bounded(-atan(forwardSpeed*forwardSpeed*tan(steering)/(s.wheelBase*s.gravity)),-.43,.43);
+            const double correction=bounded((lean-roll)*85-angular.dot(axis)*16,-45,45);
+            angular=angular+axis*(correction*dt);
         }
         velocity=velocity*(1.0/(1+.0005*speed()*dt));angular=angular*(1.0/(1+.12*dt));
         RigPoint old=position;BodyRotation oldRot=orientation;
@@ -467,7 +524,7 @@ struct RouteDriver {
         double target=maneuvering?maneuverSteer:bounded(atan(spec.wheelBase*curvature)/.58,-1,1);
         target+=sin(body.clock*(1.1+.5*skill))*.04*(1-skill)*bounded(speed/spec.maxSpeed,0,1);
         target=bounded(target,-1,1);
-        steeringCommand+=bounded(target-steeringCommand,-dt*(.8+2.2*skill),dt*(.8+2.2*skill));out.steer=steeringCommand;
+        steeringCommand+=bounded(target-steeringCommand,-dt*spec.steeringResponse*(.8+2.2*skill),dt*spec.steeringResponse*(.8+2.2*skill));out.steer=steeringCommand;
         // A gear change must let the wheels countersteer before applying power.
         // Otherwise low-skill drivers drive the previous arc during rack travel.
         if(!steeringSettled) {
@@ -492,7 +549,7 @@ struct RouteDriver {
         // Supply the force needed to hold speed against grade and rolling drag.
         // Speed error alone starves the engine near a slow uphill target.
         const double grade=body.forward().y*(reversing?-1:1);
-        const double resistance=spec.mass*spec.gravity*grade+desired*140+spec.mass*.0005*desired*desired;
+        const double resistance=spec.mass*spec.gravity*grade+desired*spec.rollingDrag+spec.mass*.0005*desired*desired;
         const double progressSpeed=body.velocity.dot(body.forward())*(reversing?-1:1);
         // Rollback is motion against the order, not progress toward cruise
         // speed. Arrest it with the brakes before applying power uphill again.

@@ -150,7 +150,8 @@ Code Vehicle::leave(const std::string& actor) {
 Code Vehicle::readiness() const {
     if (phase_ != Assembled) return WrongPhase;
     if (!partAt("engine")) return MissingEngine;
-    if (!partAt("wheel_fl") || !partAt("wheel_fr") || !partAt("wheel_rl") || !partAt("wheel_rr")) return MissingWheels;
+    if (!partAt("wheel_fl") || !partAt("wheel_rl") ||
+        (frame_.id!="motorcycle_frame" && (!partAt("wheel_fr") || !partAt("wheel_rr")))) return MissingWheels;
     if (!partAt("tank")) return TankMissing;
     if (fuel_ <= 0) return EmptyTank;
     if (partAt("engine")->fuel != fuelType_) return FuelMismatch;
