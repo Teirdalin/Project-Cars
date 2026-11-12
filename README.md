@@ -4,13 +4,6 @@ Project Cars adds modular drivable vehicles to Kenshi. The native plugin runs un
 [RE_Kenshi](https://github.com/BFrizzleFoShizzle/RE_Kenshi) and links against
 [KenshiLib](https://github.com/BFrizzleFoShizzle/KenshiLib).
 
-## Extra-small vehicles in 0.8.19
-
-Research **Vehicle Mechanics I**, then **Extra-Small Frames** to unlock the
-four-wheel quad and two-wheel motorcycle. Both have fitted spawn presets in
-**Ctrl+F12 → Spawn Vehicle**. Version 0.8.19 raises road speeds and improves
-throttle response in manual and route driving.
-
 ## Build
 
 Use Visual C++ 2010 x64, Windows SDK 7.1, and the
